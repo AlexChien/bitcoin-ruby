@@ -77,7 +77,7 @@ module Bitcoin::Storage::Backends
           txout_ids = @db[:txout].insert_multiple(new_tx.map.with_index {|tx, tx_idx|
             tx, _ = *tx
             tx.out.map.with_index {|txout, txout_idx|
-              script_type, a, n = *parse_script(txout, txout_i)
+              script_type, a, n = *parse_script(txout, txout_i, tx.hash)
               addrs += a; names += n; txout_i += 1
               txout_data(new_tx_ids[tx_idx], txout, txout_idx, script_type) } }.flatten)
 
@@ -101,13 +101,17 @@ module Bitcoin::Storage::Backends
     def reorg new_side, new_main
       @db.transaction do
         @db[:blk].where(hash: new_side.map {|h| h.htb.blob }).update(chain: SIDE)
-        new_main.each {|b| get_block(b).validator(self).validate(raise_errors: true) }  unless @config[:skip_validation]
-        @db[:blk].where(hash: new_main.map {|h| h.htb.blob }).update(chain: MAIN)
+        new_main.each do |block_hash|
+          unless @config[:skip_validation]
+            get_block(block_hash).validator(self).validate(raise_errors: true)
+          end
+          @db[:blk].where(hash: block_hash.htb.blob).update(chain: MAIN)
+        end
       end
     end
 
     # parse script and collect address/txout mappings to index
-    def parse_script txout, i
+    def parse_script txout, i, tx_hash = ""
       addrs, names = [], []
 
       script = Bitcoin::Script.new(txout.pk_script) rescue nil
@@ -122,11 +126,12 @@ module Bitcoin::Storage::Backends
           addrs << [i, script.get_hash160]
           names << [i, script]
         else
-          log.warn { "Unknown script type"}# #{tx.hash}:#{txout_idx}" }
+          log.info { "Unknown script type in #{tx_hash}:#{i}" }
+          log.debug { script.to_string }
         end
         script_type = SCRIPT_TYPES.index(script.type)
       else
-        log.error { "Error parsing script"}# #{tx.hash}:#{txout_idx}" }
+        log.error { "Error parsing script #{tx_hash}:#{i}" }
         script_type = SCRIPT_TYPES.index(:unknown)
       end
       [script_type, addrs, names]
@@ -170,7 +175,7 @@ module Bitcoin::Storage::Backends
         return transaction[:id]  if transaction
         tx_id = @db[:tx].insert(tx_data(tx))
         tx.in.each_with_index {|i, idx| store_txin(tx_id, i, idx)}
-        tx.out.each_with_index {|o, idx| store_txout(tx_id, o, idx)}
+        tx.out.each_with_index {|o, idx| store_txout(tx_id, o, idx, tx.hash)}
         tx_id
       end
     end
@@ -197,8 +202,8 @@ module Bitcoin::Storage::Backends
     end
 
     # store output +txout+
-    def store_txout(tx_id, txout, idx)
-      script_type, addrs, names = *parse_script(txout, idx)
+    def store_txout(tx_id, txout, idx, tx_hash = "")
+      script_type, addrs, names = *parse_script(txout, idx, tx_hash)
       txout_id = @db[:txout].insert(txout_data(tx_id, txout, idx, script_type))
       persist_addrs addrs.map {|i, h| [txout_id, h] }
       names.each {|i, script| store_name(script, txout_id) }
