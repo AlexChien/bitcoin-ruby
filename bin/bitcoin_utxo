@@ -1,0 +1,72 @@
+#!/usr/bin/env ruby
+#
+# @usage:
+# bitcoin_utxo depth [options]
+#
+# @example:
+# bitcoin_utxo 10001 -c /etc/namecoin.yml -q > /data/10001_unspent.json
+#
+$:.unshift( File.expand_path("../../lib", __FILE__) )
+
+require 'bitcoin'
+require 'optparse'
+require 'pry'
+
+defaults = Bitcoin::Network::Node::DEFAULT_CONFIG
+options = Bitcoin::Config.load(defaults, :blockchain)
+
+optparse = OptionParser.new do |opts|
+  opts.banner = "Usage: bitcoin_utxo depth [options]"
+
+  opts.separator("\nAvailable options:\n")
+
+  opts.on("-c", "--config [FILE]",
+    "Config file (default: #{Bitcoin::Config::CONFIG_PATHS})") do |file|
+    options = Bitcoin::Config.load_file(options, file, :blockchain)
+  end
+
+  opts.on("-s", "--storage [STORAGE]",
+    "Use storage backend") do |storage|
+    options[:storage] = storage
+  end
+
+  opts.on("-n", "--network [NETWORK]", [:bitcoin, :namecoin],
+    "User Network (bitcoin|namecoin, default: #{options[:network]})") do |network|
+    options[:network] = network.downcase.to_sym
+  end
+
+  opts.on("-v", "--verbose", "Print debug message") do |verbose|
+    options[:log].each_key {|k| options[:log][k] = :debug }
+  end
+
+  opts.on("-q", "--quiet", "Set all loggers to warn") do
+    options[:log].each_key {|k| options[:log][k] = :warn }
+  end
+
+  opts.on( '-h', '--help', 'Display this screen' ) do
+    puts opts; exit
+  end
+end
+optparse.parse!
+
+
+
+if ARGV.any?
+  depth = ARGV[0].to_i
+
+  Bitcoin.network = options[:network]
+
+  backend, config = options[:storage].split("::")
+  store = Bitcoin::Storage.send(backend, {
+            db: config, log_level: options[:log][:storage]
+          })
+
+  puts JSON.pretty_generate(Hash[
+    store.flush_utxo(depth).
+      reject{ |addr, val| val == 0 }.
+      map{ |addr, val| [Bitcoin.hash160_to_address(addr), val] }
+  ])
+
+else
+  puts "Please specify block depth"
+end

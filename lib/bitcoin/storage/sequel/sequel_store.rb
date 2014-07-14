@@ -472,6 +472,65 @@ module Bitcoin::Storage::Backends
       # end
     end
 
+    # flush unspent tx outputs by block depth
+    def flush_utxo(block_depth)
+      log.debug { "flush_utxo till block: #{block_depth}" }
+
+
+      # [{:hash160, :value}]
+      # get all output destination addresses
+      addresses = {}
+
+      outputs = @db[:addr].
+
+        # Join the tables
+        join(:addr_txout, :addr__id => :addr_txout__addr_id).
+        join(:txout, :addr_txout__txout_id => :txout__id).
+        join(:blk_tx, :txout__tx_id => :blk_tx__tx_id).
+        join(:blk, :blk__id => :blk_tx__blk_id).
+
+        # Only query block lower than target depth
+        filter( :blk__depth => 0..block_depth ).
+
+        # Make sure it's on main chain, not orphan or side
+        filter( :blk__chain => MAIN).
+
+        select(:hash160, :value)
+
+      outputs.each do |out|
+        addresses[out[:hash160]] = addresses[out[:hash160]].to_i + out[:value].to_i
+      end
+
+      txins = @db[:txin].
+
+      join(:blk_tx, :blk_tx__tx_id => :txin__tx_id).
+      join(:blk, :blk__id => :blk_tx__blk_id).
+
+      filter( :blk__depth => 0..block_depth).
+      filter( :blk__chain => MAIN)
+
+      txins.each do |txin|
+        # skip coinbase tx
+        next if txin[:prev_out] == "\x00"*32
+
+        prev_tx_hash = txin[:prev_out].reverse.hth
+        prev_out_index = txin[:prev_out_index]
+
+        spent = @db[:tx].
+          join(:txout, [:txout__tx_id => :tx__id, :txout__tx_idx => prev_out_index]).
+          join(:addr_txout, :addr_txout__txout_id => :txout__id).
+          join(:addr, :addr__id => :addr_txout__addr_id).
+          filter(:tx__hash => txin[:prev_out].reverse.blob).
+          select(:hash160, :value).
+          first
+
+        addresses[spent[:hash160]] = addresses[spent[:hash160]].to_i - spent[:value].to_i
+      end
+
+
+      return addresses
+    end
+
     protected
 
     # Abstraction for doing many quick inserts.
