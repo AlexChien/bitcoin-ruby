@@ -1,0 +1,27 @@
+all:
+  network: testnet                       # network identifier ("bitcoin" or "testnet")
+  # command: "127.0.0.1:9999"              # IP:Port to listen for incomming command connections
+  # listen: "0.0.0.0:8332"                 # IP:Port to listen for incoming peer connections
+  connect: ""                            # List of IP:Port,IP:Port of nodes to connect to
+  storage: "sequel::sqlite://~/.bitcoin-ruby/<network>/blocks.db" # storage backend to use (see STORAGE)
+blockchain:
+  headers_only: false                    # download/store only block headers (experimental)
+  dns: true                              # query peers from dns server
+  epoll: false
+  epoll_limit: 10000
+  epoll_user: nil
+  log:                                   # log levels (debug, info, warn, error, fatal)
+    network: info
+    storage: info
+  max:
+    connections: 32                      # number of peer connections
+    addr: 1024                           # peer-address store size
+    queue: 500                           # storage-queue size
+    inv: 500                             # inventory-queue size
+  intervals:
+    queue: 5                             # work storage queue
+    inv_queue: 5                         # work inventory queue
+    addrs: 15                            # collect new peer addrs
+    connect: 30                          # connect to new peers
+wallet:
+  keystore: "simple::file=~/.bitcoin-ruby/<network>/keys.json" # keystore to use

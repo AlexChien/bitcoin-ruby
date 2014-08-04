@@ -5,6 +5,7 @@ gemspec
 
 group :development do
   gem 'eventmachine'
+  gem 'em-dns'
   gem 'ffi'
   gem 'log4r'
   gem 'sequel'
