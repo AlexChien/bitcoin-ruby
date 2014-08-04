@@ -10,7 +10,7 @@ $:.unshift( File.expand_path("../../lib", __FILE__) )
 
 require 'bitcoin'
 require 'optparse'
-require 'pry'
+# require 'pry'
 
 defaults = Bitcoin::Network::Node::DEFAULT_CONFIG
 options = Bitcoin::Config.load(defaults, :blockchain)
